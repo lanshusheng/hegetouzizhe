@@ -923,65 +923,28 @@
                 const timestamp = Math.floor(Date.now() / 1000);
                 const signature = await generateSignature(FEISHU_SECRET, timestamp);
 
+                // 构建消息内容
+                const messageText = `🎯 投资者风险评估结果
+
+📋 投资者信息
+姓名：${formData.name}
+证件类型：${formData.idType}
+证件号码：${formData.idNumber}
+签署日期：${formData.date}
+
+📊 评估结果
+总分：${formData.totalScore} 分
+风险等级：${formData.riskLevel}
+
+📝 详细答案
+${answersDetail}
+⏰ 提交时间：${formData.timestamp}`;
+
                 return {
-                    timestamp: timestamp,
+                    timestamp: timestamp.toString(),
                     sign: signature,
-                    msg_type: "post",
-                    content: {
-                        post: {
-                            zh_cn: {
-                                title: "🎯 投资者风险评估结果",
-                                content: [
-                                    [
-                                        {
-                                            tag: "text",
-                                            text: `📋 投资者信息\n`
-                                        },
-                                        {
-                                            tag: "text",
-                                            text: `姓名：${formData.name}\n`
-                                        },
-                                        {
-                                            tag: "text",
-                                            text: `证件类型：${formData.idType}\n`
-                                        },
-                                        {
-                                            tag: "text",
-                                            text: `证件号码：${formData.idNumber}\n`
-                                        },
-                                        {
-                                            tag: "text",
-                                            text: `签署日期：${formData.date}\n\n`
-                                        },
-                                        {
-                                            tag: "text",
-                                            text: `📊 评估结果\n`
-                                        },
-                                        {
-                                            tag: "text",
-                                            text: `总分：${formData.totalScore} 分\n`
-                                        },
-                                        {
-                                            tag: "text",
-                                            text: `风险等级：${formData.riskLevel}\n\n`
-                                        },
-                                        {
-                                            tag: "text",
-                                            text: `📝 详细答案\n`
-                                        },
-                                        {
-                                            tag: "text",
-                                            text: answersDetail
-                                        },
-                                        {
-                                            tag: "text",
-                                            text: `⏰ 提交时间：${formData.timestamp}`
-                                        }
-                                    ]
-                                ]
-                            }
-                        }
-                    }
+                    msg_type: "text",
+                    content: JSON.stringify({text: messageText})
                 };
             }
 
