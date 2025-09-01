@@ -912,9 +912,9 @@
                     if (formData.answers[i]) {
                         const answer = formData.answers[i];
                         if (answer.type === 'checkbox') {
-                            answersDetail += `${i}. ${answer.question}：${answer.selected.join('、')}\n   内容：${answer.selectedContents.join('、')}\n   得分：${answer.score}\n\n`;
+                            answersDetail += `${i}. ${answer.question}： ${answer.selectedContents.join('、')}\n `;
                         } else {
-                            answersDetail += `${i}. ${answer.question}：${answer.selected}\n   内容：${answer.selectedContent}\n   得分：${answer.score}\n\n`;
+                            answersDetail += `${i}. ${answer.question}： ${answer.selectedContent}\n `;
                         }
                     }
                 }
