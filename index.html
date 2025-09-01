@@ -532,12 +532,23 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('页面加载完成，开始初始化...');
+            
             const calculateBtn = document.getElementById('calculate-btn');
             const submitBtn = document.getElementById('submit-btn');
             const resultContainer = document.getElementById('result-container');
             const totalScoreElement = document.getElementById('total-score');
             const riskLevelElement = document.getElementById('risk-level');
             const submitStatus = document.getElementById('submit-status');
+            
+            console.log('DOM元素获取状态:', {
+                calculateBtn: !!calculateBtn,
+                submitBtn: !!submitBtn,
+                resultContainer: !!resultContainer,
+                totalScoreElement: !!totalScoreElement,
+                riskLevelElement: !!riskLevelElement,
+                submitStatus: !!submitStatus
+            });
             
             // 飞书webhook地址和签名密钥
             const FEISHU_WEBHOOK = 'https://open.feishu.cn/open-apis/bot/v2/hook/049f39ab-7a60-4c4c-bc0d-312875cfde3f';
@@ -723,6 +734,7 @@
             };
             
             calculateBtn.addEventListener('click', function() {
+                console.log('计算按钮被点击');
                 // 检查所有必填项是否已填写
                 const requiredInputs = document.querySelectorAll('input[required]');
                 let allFilled = true;
@@ -806,10 +818,12 @@
             });
 
             submitBtn.addEventListener('click', function() {
+                console.log('提交按钮被点击');
                 submitToFeishu();
             });
 
             function submitToFeishu() {
+                console.log('开始提交到飞书...');
                 // 收集所有表单数据
                 const formData = {
                     name: document.querySelector('input[name="name"]').value,
@@ -821,6 +835,8 @@
                     answers: {},
                     timestamp: new Date().toLocaleString('zh-CN')
                 };
+                
+                console.log('表单数据收集完成:', formData);
 
                 // 收集所有问题的答案
                 for (let i = 1; i <= 20; i++) {
@@ -869,19 +885,23 @@
                         },
                         body: JSON.stringify(feishuMessage)
                     })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.code === 0) {
-                        showSubmitStatus('提交成功！结果已发送到飞书群。', 'success');
-                        submitBtn.disabled = true;
-                        submitBtn.textContent = '已提交';
-                    } else {
-                        showSubmitStatus('提交失败：' + (data.msg || '未知错误'), 'error');
-                    }
-                })
-                .catch(error => {
-                    console.error('提交失败:', error);
-                    showSubmitStatus('提交失败：网络错误，请稍后重试', 'error');
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.code === 0) {
+                            showSubmitStatus('提交成功！结果已发送到飞书群。', 'success');
+                            submitBtn.disabled = true;
+                            submitBtn.textContent = '已提交';
+                        } else {
+                            showSubmitStatus('提交失败：' + (data.msg || '未知错误'), 'error');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('提交失败:', error);
+                        showSubmitStatus('提交失败：网络错误，请稍后重试', 'error');
+                    });
+                }).catch(error => {
+                    console.error('构建消息失败:', error);
+                    showSubmitStatus('构建消息失败，请稍后重试', 'error');
                 });
             }
 
