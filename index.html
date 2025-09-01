@@ -988,19 +988,19 @@
             // 生成飞书签名
             async function generateSignature(secret, timestamp) {
                 try {
-                    // 把timestamp+"\n"+密钥当做签名字符串
+                    // 把timestamp+"\n"+密钥当做签名字符串（作为密钥）
                     const stringToSign = timestamp + "\n" + secret;
                     
                     // 使用 CryptoJS 生成 HMAC-SHA256 签名
-                    // 根据Java代码分析：secret作为密钥，stringToSign作为消息
+                    // 根据Java代码：stringToSign作为密钥，空字符串作为消息
                     if (typeof CryptoJS !== 'undefined') {
-                        const hmac = CryptoJS.HmacSHA256(stringToSign, secret);
+                        const hmac = CryptoJS.HmacSHA256("", stringToSign);
                         return CryptoJS.enc.Base64.stringify(hmac);
                     }
                     
                     // 备用方法：使用 Web Crypto API
                     if (window.crypto && window.crypto.subtle) {
-                        return await generateHmacSha256(stringToSign, secret);
+                        return await generateHmacSha256("", stringToSign);
                     }
                     
                     // 最后的备用方法（仅用于测试）
