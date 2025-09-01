@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>投资者风险承受能力评估问卷</title>
+    <!-- 引入 CryptoJS 用于生成 HMAC-SHA256 签名 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -117,6 +119,10 @@
         button:hover {
             background-color: #2980b9;
         }
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
         .result-container {
             display: none;
             margin-top: 30px;
@@ -158,6 +164,22 @@
             padding-top: 20px;
             border-top: 1px dashed #ccc;
         }
+        .submit-status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+        }
+        .submit-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .submit-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
         @media (max-width: 768px) {
             .personal-info {
                 grid-template-columns: 1fr;
@@ -170,6 +192,22 @@
             font-size: 0.9em;
             color: #e74c3c;
             margin-top: 5px;
+        }
+        .submit-status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+        }
+        .submit-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .submit-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
         }
     </style>
 </head>
@@ -444,6 +482,7 @@
 
             <div class="btn-container">
                 <button type="button" id="calculate-btn">计算风险承受能力</button>
+                <button type="button" id="submit-btn" style="display: none;">提交到飞书</button>
             </div>
         </form>
 
@@ -487,14 +526,22 @@
                 <p>投资者（签名）：________________________</p>
             </div>
         </div>
+
+        <div class="submit-status" id="submit-status"></div>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const calculateBtn = document.getElementById('calculate-btn');
+            const submitBtn = document.getElementById('submit-btn');
             const resultContainer = document.getElementById('result-container');
             const totalScoreElement = document.getElementById('total-score');
             const riskLevelElement = document.getElementById('risk-level');
+            const submitStatus = document.getElementById('submit-status');
+            
+            // 飞书webhook地址和签名密钥
+            const FEISHU_WEBHOOK = 'https://open.feishu.cn/open-apis/bot/v2/hook/049f39ab-7a60-4c4c-bc0d-312875cfde3f';
+            const FEISHU_SECRET = '5J8dMRh2xO4EZazyCCRbph';
             
             // 评分标准
             const scoreMap = {
@@ -518,6 +565,161 @@
                 '18': {'A': 5, 'B': 3, 'C': 1},
                 '19': {'A': 1, 'B': 2, 'C': 4, 'D': 5},
                 '20': {'A': 4, 'B': 3, 'C': 2, 'D': 5, 'E': 1}
+            };
+
+            // 问题标题映射
+            const questionTitles = {
+                '1': '主要收入来源',
+                '2': '投资资金占比',
+                '3': '债务情况',
+                '4': '可投资资产',
+                '5': '投资知识背景',
+                '6': '投资经验',
+                '7': '交易频率认知',
+                '8': '产品服务数量',
+                '9': '投资经验年限',
+                '10': '月交易额',
+                '11': '投资时间要求',
+                '12': '重点投资品种',
+                '13': '风险收益偏好',
+                '14': '期望收益',
+                '15': '最大损失承受',
+                '16': '投资回报用途',
+                '17': '年龄',
+                '18': '抚养义务人数',
+                '19': '最高学历',
+                '20': '家庭就业状况'
+            };
+
+            // 选项内容映射
+            const optionContents = {
+                '1': {
+                    'A': '工资、劳务报酬',
+                    'B': '生产经营所得',
+                    'C': '利息、股息、转让证券等金融性资产收入',
+                    'D': '出租、出售房地产等非金融性资产收入',
+                    'E': '无固定收入'
+                },
+                '2': {
+                    'A': '70%以上',
+                    'B': '50%-70%',
+                    'C': '30%－50%',
+                    'D': '10%－30%',
+                    'E': '10%以下'
+                },
+                '3': {
+                    'A': '没有',
+                    'B': '有，住房抵押贷款等长期定额债务',
+                    'C': '有，信用卡欠款、消费信贷等短期信用债务',
+                    'D': '有，亲朋之间借款'
+                },
+                '4': {
+                    'A': '不超过50万元人民币',
+                    'B': '50万-300万元（不含）人民币',
+                    'C': '300万-1000万元（不含）人民币',
+                    'D': '1000万元人民币以上'
+                },
+                '5': {
+                    'A': '现在或此前曾从事金融、经济或财会等与金融产品投资相关的工作超过两年',
+                    'B': '已取得金融、经济或财会等与金融产品投资相关专业学士以上学位',
+                    'C': '取得证券从业资格、基金从业资格、期货从业资格、注册会计师证书（CPA）或注册金融分析师证书（CFA）中的一项及以上',
+                    'D': '我不符合以上任何一项描述'
+                },
+                '6': {
+                    'A': '有限：除银行活期账户和定期存款外，我基本没有其他投资经验',
+                    'B': '一般：除银行活期账户和定期存款外，我购买过基金、保险等理财产品，但还需要进一步的指导',
+                    'C': '丰富：我是一位有经验的投资者，参与过股票、基金等产品的交易，并倾向于自己做出投资决策',
+                    'D': '非常丰富：我是一位非常有经验的投资者，参与过权证、期货或创业板等产品的交易'
+                },
+                '7': {
+                    'A': '太高了',
+                    'B': '偏高',
+                    'C': '正常',
+                    'D': '偏低'
+                },
+                '8': {
+                    'A': '5个以下',
+                    'B': '6至10个',
+                    'C': '11至15个',
+                    'D': '16个以上'
+                },
+                '9': {
+                    'A': '银行存款等',
+                    'B': '债券、货币市场基金、债券型基金或其它固定收益类产品等',
+                    'C': '股票、混合型基金、偏股型基金、股票型基金等权益类投资品种等',
+                    'D': '期货、期权、融资融券',
+                    'E': '复杂金融产品、其他产品或服务'
+                },
+                '10': {
+                    'A': '10万元以内',
+                    'B': '10万元-30万元',
+                    'C': '30万元-100万元',
+                    'D': '100万元以上',
+                    'E': '从未从事过金融市场投资'
+                },
+                '11': {
+                    'A': '0到1年',
+                    'B': '1到5年',
+                    'C': '无特别要求'
+                },
+                '12': {
+                    'A': '债券、货币市场基金、债券基金等固定收益类投资品种',
+                    'B': '股票、混合型基金、偏股型基金、股票型基金等权益类投资品种',
+                    'C': '期货、期权、融资融券等',
+                    'D': '高风险金融产品或服务',
+                    'E': '其他产品或服务'
+                },
+                '13': {
+                    'A': '全部投资于A',
+                    'B': '大部分投资于A',
+                    'C': '两种投资各一半',
+                    'D': '大部分投资于B',
+                    'E': '全部投资于B'
+                },
+                '14': {
+                    'A': '尽可能保证本金安全，不在乎收益率比较低',
+                    'B': '产生一定的收益，可以承担一定的投资风险',
+                    'C': '产生较多的收益，可以承担较大的投资风险',
+                    'D': '实现资产大幅增长，愿意承担很大的投资风险'
+                },
+                '15': {
+                    'A': '不能承受任何损失',
+                    'B': '一定的投资损失',
+                    'C': '较大的投资损失',
+                    'D': '损失可能超过本金'
+                },
+                '16': {
+                    'A': '改善生活',
+                    'B': '个体生产经营或证券投资以外的投资行为',
+                    'C': '履行扶养、抚养或赡养义务',
+                    'D': '本人养老或医疗',
+                    'E': '偿付债务'
+                },
+                '17': {
+                    'A': '18-30岁',
+                    'B': '31-40岁',
+                    'C': '41-50岁',
+                    'D': '51-60岁',
+                    'E': '超过60岁'
+                },
+                '18': {
+                    'A': '1-2人',
+                    'B': '3-4人',
+                    'C': '5人以上'
+                },
+                '19': {
+                    'A': '高中或以下',
+                    'B': '大学专科',
+                    'C': '大学本科',
+                    'D': '硕士及以上'
+                },
+                '20': {
+                    'A': '您与配偶均有稳定收入的工作',
+                    'B': '您与配偶其中一人有稳定收入的工作',
+                    'C': '您与配偶均没有稳定收入的工作或者已退休',
+                    'D': '未婚，但有稳定收入的工作',
+                    'E': '未婚，目前暂无稳定收入的工作'
+                }
             };
             
             calculateBtn.addEventListener('click', function() {
@@ -597,10 +799,223 @@
                 totalScoreElement.textContent = totalScore;
                 riskLevelElement.textContent = riskLevel;
                 resultContainer.style.display = 'block';
+                submitBtn.style.display = 'inline-block';
                 
                 // 滚动到结果部分
                 resultContainer.scrollIntoView({ behavior: 'smooth' });
             });
+
+            submitBtn.addEventListener('click', function() {
+                submitToFeishu();
+            });
+
+            function submitToFeishu() {
+                // 收集所有表单数据
+                const formData = {
+                    name: document.querySelector('input[name="name"]').value,
+                    idType: document.querySelector('input[name="id-type"]').value,
+                    idNumber: document.querySelector('input[name="id-number"]').value,
+                    date: document.querySelector('input[name="date"]').value,
+                    totalScore: document.getElementById('total-score').textContent,
+                    riskLevel: document.getElementById('risk-level').textContent,
+                    answers: {},
+                    timestamp: new Date().toLocaleString('zh-CN')
+                };
+
+                // 收集所有问题的答案
+                for (let i = 1; i <= 20; i++) {
+                    const questionName = `q${i}`;
+                    const inputs = document.querySelectorAll(`input[name="${questionName}"]`);
+                    
+                    if (inputs[0].type === 'checkbox') {
+                        // 多选题
+                        const selectedValues = [];
+                        const selectedContents = [];
+                        inputs.forEach(input => {
+                            if (input.checked) {
+                                selectedValues.push(input.value);
+                                selectedContents.push(optionContents[i][input.value]);
+                            }
+                        });
+                        formData.answers[i] = {
+                            question: questionTitles[i],
+                            type: 'checkbox',
+                            selected: selectedValues,
+                            selectedContents: selectedContents,
+                            score: Math.max(...selectedValues.map(v => scoreMap[i][v]))
+                        };
+                    } else {
+                        // 单选题
+                        const selected = document.querySelector(`input[name="${questionName}"]:checked`);
+                        if (selected) {
+                            formData.answers[i] = {
+                                question: questionTitles[i],
+                                type: 'radio',
+                                selected: selected.value,
+                                selectedContent: optionContents[i][selected.value],
+                                score: scoreMap[i][selected.value]
+                            };
+                        }
+                    }
+                }
+
+                // 构建飞书消息（异步生成签名）
+                buildFeishuMessage(formData).then(feishuMessage => {
+                    // 发送到飞书
+                    fetch(FEISHU_WEBHOOK, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(feishuMessage)
+                    })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.code === 0) {
+                        showSubmitStatus('提交成功！结果已发送到飞书群。', 'success');
+                        submitBtn.disabled = true;
+                        submitBtn.textContent = '已提交';
+                    } else {
+                        showSubmitStatus('提交失败：' + (data.msg || '未知错误'), 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('提交失败:', error);
+                    showSubmitStatus('提交失败：网络错误，请稍后重试', 'error');
+                });
+            }
+
+            async function buildFeishuMessage(formData) {
+                // 构建答案详情
+                let answersDetail = '';
+                for (let i = 1; i <= 20; i++) {
+                    if (formData.answers[i]) {
+                        const answer = formData.answers[i];
+                        if (answer.type === 'checkbox') {
+                            answersDetail += `${i}. ${answer.question}：${answer.selected.join('、')}\n   内容：${answer.selectedContents.join('、')}\n   得分：${answer.score}\n\n`;
+                        } else {
+                            answersDetail += `${i}. ${answer.question}：${answer.selected}\n   内容：${answer.selectedContent}\n   得分：${answer.score}\n\n`;
+                        }
+                    }
+                }
+
+                // 生成时间戳和签名
+                const timestamp = Math.floor(Date.now() / 1000);
+                const stringToSign = timestamp + '\n' + FEISHU_SECRET;
+                const signature = await generateSignature(stringToSign);
+
+                return {
+                    timestamp: timestamp,
+                    sign: signature,
+                    msg_type: "post",
+                    content: {
+                        post: {
+                            zh_cn: {
+                                title: "🎯 投资者风险评估结果",
+                                content: [
+                                    [
+                                        {
+                                            tag: "text",
+                                            text: `📋 投资者信息\n`
+                                        },
+                                        {
+                                            tag: "text",
+                                            text: `姓名：${formData.name}\n`
+                                        },
+                                        {
+                                            tag: "text",
+                                            text: `证件类型：${formData.idType}\n`
+                                        },
+                                        {
+                                            tag: "text",
+                                            text: `证件号码：${formData.idNumber}\n`
+                                        },
+                                        {
+                                            tag: "text",
+                                            text: `签署日期：${formData.date}\n\n`
+                                        },
+                                        {
+                                            tag: "text",
+                                            text: `📊 评估结果\n`
+                                        },
+                                        {
+                                            tag: "text",
+                                            text: `总分：${formData.totalScore} 分\n`
+                                        },
+                                        {
+                                            tag: "text",
+                                            text: `风险等级：${formData.riskLevel}\n\n`
+                                        },
+                                        {
+                                            tag: "text",
+                                            text: `📝 详细答案\n`
+                                        },
+                                        {
+                                            tag: "text",
+                                            text: answersDetail
+                                        },
+                                        {
+                                            tag: "text",
+                                            text: `⏰ 提交时间：${formData.timestamp}`
+                                        }
+                                    ]
+                                ]
+                            }
+                        }
+                    }
+                };
+            }
+
+            // 生成飞书签名
+            async function generateSignature(stringToSign) {
+                // 使用 CryptoJS 生成 HMAC-SHA256 签名
+                if (typeof CryptoJS !== 'undefined') {
+                    const hmac = CryptoJS.HmacSHA256(stringToSign, FEISHU_SECRET);
+                    return CryptoJS.enc.Base64.stringify(hmac);
+                }
+                
+                // 备用方法：使用 Web Crypto API
+                if (window.crypto && window.crypto.subtle) {
+                    return await generateHmacSha256(stringToSign, FEISHU_SECRET);
+                }
+                
+                // 最后的备用方法（仅用于测试）
+                return btoa(stringToSign + '_' + FEISHU_SECRET);
+            }
+
+            // 使用 Web Crypto API 生成 HMAC-SHA256 签名（备用方法）
+            async function generateHmacSha256(message, secret) {
+                try {
+                    const encoder = new TextEncoder();
+                    const keyData = encoder.encode(secret);
+                    const messageData = encoder.encode(message);
+                    
+                    const key = await crypto.subtle.importKey(
+                        'raw',
+                        keyData,
+                        { name: 'HMAC', hash: 'SHA-256' },
+                        false,
+                        ['sign']
+                    );
+                    
+                    const signature = await crypto.subtle.sign('HMAC', key, messageData);
+                    return btoa(String.fromCharCode(...new Uint8Array(signature)));
+                } catch (error) {
+                    console.warn('HMAC-SHA256 生成失败，使用备用方法:', error);
+                    return btoa(message + '_' + secret);
+                }
+            }
+
+            function showSubmitStatus(message, type) {
+                submitStatus.textContent = message;
+                submitStatus.className = `submit-status submit-${type}`;
+                submitStatus.style.display = 'block';
+                
+                // 3秒后自动隐藏
+                setTimeout(() => {
+                    submitStatus.style.display = 'none';
+                }, 3000);
+            }
         });
     </script>
 </body>
